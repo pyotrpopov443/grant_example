@@ -102,10 +102,11 @@ body.reading .site-footer{padding-top:12px;padding-bottom:12px}
 #pdfview .pdf-message{padding:24px;color:#354f42;background:white;border-radius:12px;text-align:center}
 #pdfview .pdf-page:empty:before{content:attr(aria-label);position:absolute;top:24px;left:24px;color:#788078;font:14px system-ui}
 @media(max-width:600px){#pdfview{padding:8px}#pdfview .pdf-page{margin-bottom:8px}}
+@media(max-width:700px){.top{flex-wrap:nowrap}.top .brand{flex:1;min-width:0;overflow:hidden}.top .brand span:last-child{overflow:hidden;text-overflow:ellipsis}.top #about{white-space:nowrap}}
 </style>
 </head>
 <body>
-<header class="top"><button class="brand" id="brand" aria-label="На главную"><span class="symbol" aria-hidden="true">❧</span><span>Подростки и дропперство</span></button><button class="secondary" id="about">Проект и методика</button></header>
+<header class="top"><button class="brand" id="brand" aria-label="На главную"><span class="symbol" aria-hidden="true">❧</span><span>Подростки и дропперство</span></button><button class="secondary" id="about">О проекте</button></header>
 <main>
 <div class="content-navigation"><button id="back" type="button" aria-label="Назад">← Назад</button><nav class="breadcrumbs" aria-label="Хлебные крошки"><ol id="breadcrumbs"></ol></nav></div>
 
@@ -308,7 +309,7 @@ const descriptions=["Вопросы, гипотезы и границы прое
 const categories=[
  {id:'c-law',title:'Нормативно-правовая база',description:'Полные тексты законов и кодексов в исходных PDF',sections:['7','8','9']},
  {id:'c-context',title:'Аналитические материалы',description:'Опубликованные доклады для изучения мошенничества',sections:['2']},
- {id:'c-method',title:'Проект и методика',description:'Замысел, планы, инструменты исследования и материалы профилактики',sections:['1','3','4','5','6','about']}
+ {id:'c-method',title:'О проекте',description:'Замысел, планы, инструменты исследования и материалы профилактики',sections:['1','3','4','5','6','about']}
 ];
 const catalogCategories=categories.filter(c=>c.id!=='c-method');
 const inMainCatalog=d=>catalogCategories.some(c=>c.sections.includes(d.group));
