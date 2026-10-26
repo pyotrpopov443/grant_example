@@ -126,6 +126,22 @@ body.reading .site-footer{padding-top:12px;padding-bottom:12px}
 body.reading .content-navigation{margin-bottom:0}
 .reading-tools{min-height:40px}
 @media(max-width:700px){.top .brand{flex:0 1 auto;width:auto}}
+
+/* Screen-sized, horizontally paginated text book. */
+#textview:not([hidden]){display:flex;flex-direction:column;padding:clamp(16px,3vw,32px);overflow:hidden}
+.book-sheet{flex:1;min-height:0;overflow:hidden;width:100%;max-width:68ch;margin:0 auto;touch-action:pan-y;position:relative}
+.book-flow{height:100%;column-fill:auto;column-gap:48px;transform:translateX(0);will-change:transform}
+.book-flow p,.book-flow h2{orphans:2;widows:2}
+.book-flow h2{break-after:avoid}
+.book-nav{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;flex-shrink:0;margin-top:16px;font:14px/1.4 system-ui,sans-serif;color:var(--muted)}
+.book-nav button{border:0;background:transparent;color:var(--green);border-radius:8px;min-width:40px;min-height:40px;font-size:22px;cursor:pointer}
+.book-nav button:hover:not(:disabled){background:var(--accent)}
+.book-nav button:disabled{opacity:.3;cursor:default}
+.book-nav input{width:5.5ch;min-height:36px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink);font:inherit;text-align:center;padding:4px;appearance:textfield;-moz-appearance:textfield}
+.book-nav input::-webkit-inner-spin-button,.book-nav input::-webkit-outer-spin-button{appearance:none;margin:0}
+.book-nav form{display:flex;align-items:center;gap:8px}
+.book-nav .book-status{flex-basis:100%;text-align:center;font-size:12px}.book-nav .book-status:empty{display:none}
+@media(max-width:600px){#textview:not([hidden]){padding:16px}.book-nav{margin-top:10px;gap:6px}.book-nav label{font-size:13px}}
 </style>
 </head>
 <body>
@@ -455,7 +471,7 @@ function loadPdfEngine(){
 }
 function releasePdf(){
  const session=pdfSession;pdfSession=null;
- if(session){session.observer?.disconnect();session.resize?.disconnect();session.textObserver?.disconnect();session.dispose?.();for(const task of session.tasks)task.cancel();session.loading?.destroy().catch(()=>{});}
+ if(session){session.observer?.disconnect();session.resize?.disconnect();session.textObserver?.disconnect();session.bookResize?.disconnect();session.dispose?.();for(const task of session.tasks)task.cancel();session.loading?.destroy().catch(()=>{});}
  $('pdfview').replaceChildren();$('textview').replaceChildren();$('textview').hidden=true;$('reader').classList.remove('text-reading');$('readingmode').disabled=true;$('readingmode').textContent='Читать текст';$('readingmode').setAttribute('aria-pressed','false');$('textsize').hidden=true;for(const id of ['readingmode','smallertext','largertext'])$(id).onclick=null;
 }
 let readingPreference=null,readingFontSize=18;
@@ -475,18 +491,36 @@ function pdfTextParagraphs(content){
  }flush();return out;
 }
 function setupTextReading(session,pdf,firstContent){
- const textview=$('textview'),mode=$('readingmode');session.textSlots=[];session.textVisible=new Set();let textBusy=false;
- textview.style.setProperty('--reading-font-size',readingFontSize+'px');
- for(let n=1;n<=pdf.numPages;n++){const slot=element('section',undefined,'text-page');slot.dataset.page=n;slot.setAttribute('aria-label','Страница '+n);slot.append(element('p','Загрузка текста…','text-placeholder'));textview.append(slot);session.textSlots.push(slot);}
- async function readPages(){if(textBusy||pdfSession!==session||!session.textMode)return;textBusy=true;try{while(pdfSession===session&&session.textMode){const slot=[...session.textVisible].find(s=>!s.dataset.ready);if(!slot)break;try{const page=await pdf.getPage(Number(slot.dataset.page)),content=Number(slot.dataset.page)===1?firstContent:await page.getTextContent();if(pdfSession!==session)return;const paragraphs=pdfTextParagraphs(content);slot.replaceChildren();if(!paragraphs.length){slot.append(element('p','На этой странице нет текста. Посмотрите её в оригинале PDF.','text-placeholder'));}else{for(const p of paragraphs)slot.append(element(p.heading?'h2':'p',p.text));}slot.dataset.ready='true';}catch(e){if(pdfSession!==session)return;slot.replaceChildren(element('p','Текст страницы недоступен. Откройте оригинал PDF.','text-placeholder'));slot.dataset.ready='true';}}}finally{textBusy=false;}}
- session.textObserver=new IntersectionObserver(entries=>{for(const entry of entries){if(entry.isIntersecting)session.textVisible.add(entry.target);else session.textVisible.delete(entry.target);}readPages();},{root:textview,rootMargin:'700px 0px'});session.textSlots.forEach(s=>session.textObserver.observe(s));
- function firstVisible(root,slots){const top=root.getBoundingClientRect().top;return slots.find(s=>s.getBoundingClientRect().bottom>top+8)||slots[0];}
- session.setTextMode=enabled=>{if(pdfSession!==session)return;const previous=session.textMode?firstVisible(textview,session.textSlots):firstVisible($('pdfview'),session.slots);const page=Number(previous?.dataset.page)||1;session.textMode=enabled;$('reader').classList.toggle('text-reading',enabled);textview.hidden=!enabled;$('textsize').hidden=!enabled;mode.textContent=enabled?'Оригинал PDF':'Читать текст';mode.setAttribute('aria-pressed',String(enabled));requestAnimationFrame(()=>{if(pdfSession!==session)return;const root=enabled?textview:$('pdfview'),slot=(enabled?session.textSlots:session.slots)[page-1];root.scrollTop+=slot.getBoundingClientRect().top-root.getBoundingClientRect().top; if(enabled){session.textVisible.add(slot);readPages();}});};
+ const textview=$('textview'),mode=$('readingmode');textview.style.setProperty('--reading-font-size',readingFontSize+'px');
+ const sheet=element('div',undefined,'book-sheet'),flow=element('article',undefined,'book-flow'),nav=element('div',undefined,'book-nav');sheet.append(flow);
+ const prev=element('button','‹'),next=element('button','›'),form=element('form'),label=element('label','Страница'),input=element('input'),total=element('span','…'),status=element('span','Подготовка книги…','book-status');
+ prev.type=next.type='button';form.noValidate=true;prev.setAttribute('aria-label','Предыдущая страница');next.setAttribute('aria-label','Следующая страница');input.type='number';input.inputMode='numeric';input.min='1';input.value='1';input.setAttribute('aria-label','Номер страницы');input.id='book-page-number';label.htmlFor=input.id;form.append(label,input,element('span','из'),total);nav.append(prev,form,next,status);nav.setAttribute('aria-label','Страницы книги');textview.replaceChildren(sheet,nav);
+ let bookPage=0,count=1,stride=1,appliedOffset=0,ready=false,building=false,built=false,pendingSource=1,lastWheel=0,layoutFrame=0,anchorFrame=0,savedAnchor=null,returnBookPage=0,returnBookSource=null;
+ function controls(){input.value=String(bookPage+1);input.max=String(count);total.textContent=ready?String(count):'…';input.disabled=!ready;prev.disabled=!ready||bookPage===0;next.disabled=!ready||bookPage>=count-1;}
+ function goTo(index){bookPage=Math.max(0,Math.min(count-1,Math.floor(index)||0));appliedOffset=bookPage*stride;flow.style.transform='translateX('+(-appliedOffset)+'px)';sheet.scrollLeft=0;controls();cancelAnimationFrame(anchorFrame);anchorFrame=requestAnimationFrame(()=>{if(pdfSession===session&&session.textMode)savedAnchor=bookmark();});}
+ function bookmark(){if(!session.textMode||!sheet.clientHeight)return null;const r=sheet.getBoundingClientRect(),x=r.left+6,y=r.top+Math.min(20,r.height/3);let range=null;if(document.caretRangeFromPoint)range=document.caretRangeFromPoint(x,y);else if(document.caretPositionFromPoint){const c=document.caretPositionFromPoint(x,y);if(c){range=document.createRange();range.setStart(c.offsetNode,c.offset);range.collapse(true);}}return range&&flow.contains(range.startContainer)?range:null;}
+ function pageFor(node){if(!node)return 0;const r=node.getBoundingClientRect(),left=sheet.getBoundingClientRect().left;return Math.max(0,Math.floor((r.left-left+appliedOffset+1)/stride));}
+ function repaginate(anchor=null){if(!session.textMode||!sheet.clientWidth||!sheet.clientHeight)return;flow.style.width=sheet.clientWidth+'px';flow.style.columnWidth=sheet.clientWidth+'px';flow.style.height=sheet.clientHeight+'px';stride=sheet.clientWidth+48;count=Math.max(1,Math.ceil((flow.scrollWidth+48)/stride));goTo(anchor?pageFor(anchor):bookPage);}
+ function scheduleLayout(){if(layoutFrame)return;const anchor=savedAnchor||bookmark();layoutFrame=requestAnimationFrame(()=>{layoutFrame=0;if(pdfSession===session)repaginate(anchor);});}
+ function sourceAtPosition(){const range=bookmark(),node=range?.startContainer;const el=node?.nodeType===Node.ELEMENT_NODE?node:node?.parentElement;const direct=el?.closest('[data-source-page]');if(direct)return Number(direct.dataset.sourcePage);const bounds=sheet.getBoundingClientRect();const visible=[...flow.children].find(p=>[...p.getClientRects()].some(r=>r.right>bounds.left&&r.left<bounds.right&&r.bottom>bounds.top&&r.top<bounds.bottom));return Number(visible?.dataset.sourcePage)||pendingSource;}
+ async function buildBook(){if(building||built)return;building=true;controls();try{for(let n=1;n<=pdf.numPages;n++){const page=await pdf.getPage(n),content=n===1?firstContent:await page.getTextContent();if(pdfSession!==session)return;const paragraphs=pdfTextParagraphs(content);if(!paragraphs.length){paragraphs.push({text:'На этой странице нет текстового слоя. Посмотрите её в оригинале PDF.',heading:false});}
+  for(const p of paragraphs){const el=element(p.heading?'h2':'p',p.text);el.dataset.sourcePage=n;flow.append(el);}if(n===1||n%12===0){status.textContent='Подготовка книги: '+Math.round(n/pdf.numPages*100)+'%';repaginate();await new Promise(resolve=>requestAnimationFrame(resolve));}}
+  if(pdfSession!==session)return;built=true;ready=true;status.textContent='';repaginate();const target=flow.querySelector('[data-source-page="'+pendingSource+'"]');if(target&&pendingSource>1)goTo(pageFor(target));else controls();
+ }catch(e){if(pdfSession!==session)return;status.textContent='Не удалось подготовить книгу';console.error('Book:',e);}finally{building=false;}}
+ function visiblePdfPage(){const viewer=$('pdfview'),top=viewer.getBoundingClientRect().top;return Number(session.slots.find(s=>s.getBoundingClientRect().bottom>top+8)?.dataset.page)||1;}
+ session.setTextMode=enabled=>{if(pdfSession!==session)return;if(session.textMode===enabled)return;const source=session.textMode?sourceAtPosition():visiblePdfPage();if(session.textMode){returnBookPage=bookPage;returnBookSource=source;}pendingSource=source;session.textMode=enabled;$('reader').classList.toggle('text-reading',enabled);textview.hidden=!enabled;$('textsize').hidden=!enabled;mode.textContent=enabled?'Оригинал PDF':'Читать текст';mode.setAttribute('aria-pressed',String(enabled));requestAnimationFrame(()=>{if(pdfSession!==session)return;if(enabled){repaginate();if(built){if(returnBookSource===source)goTo(returnBookPage);else{const target=flow.querySelector('[data-source-page="'+source+'"]');if(target)goTo(pageFor(target));}}else buildBook();}else{const viewer=$('pdfview'),slot=session.slots[source-1];viewer.scrollTop+=slot.getBoundingClientRect().top-viewer.getBoundingClientRect().top;}});};
  mode.disabled=false;mode.onclick=()=>{readingPreference=session.textMode?'pdf':'text';try{localStorage.setItem('reading-mode',readingPreference);}catch{}session.setTextMode(!session.textMode);};
- function resizeText(delta){readingFontSize=Math.max(16,Math.min(26,readingFontSize+delta));textview.style.setProperty('--reading-font-size',readingFontSize+'px');$('smallertext').disabled=readingFontSize<=16;$('largertext').disabled=readingFontSize>=26;try{localStorage.setItem('reading-size',String(readingFontSize));}catch{}}
+ function resizeText(delta){const anchor=bookmark();readingFontSize=Math.max(16,Math.min(26,readingFontSize+delta));textview.style.setProperty('--reading-font-size',readingFontSize+'px');$('smallertext').disabled=readingFontSize<=16;$('largertext').disabled=readingFontSize>=26;try{localStorage.setItem('reading-size',String(readingFontSize));}catch{}repaginate(anchor);}
  $('smallertext').onclick=()=>resizeText(-2);$('largertext').onclick=()=>resizeText(2);resizeText(0);
+ prev.onclick=()=>goTo(bookPage-1);next.onclick=()=>goTo(bookPage+1);form.onsubmit=e=>{e.preventDefault();if(ready)goTo(Number(input.value)-1);input.blur();};input.onchange=()=>{if(ready)goTo(Number(input.value)-1);};
+ const bookKey=e=>{if(!session.textMode||e.target===input||e.target.closest?.('input,textarea,button,[contenteditable=true]')||!ready||e.altKey||e.ctrlKey||e.metaKey)return;const backward=['ArrowLeft','ArrowUp','PageUp'].includes(e.key),forward=['ArrowRight','ArrowDown','PageDown',' '].includes(e.key);if(backward||forward){e.preventDefault();goTo(bookPage+(backward||e.shiftKey?-1:1));}else if(e.key==='Home'||e.key==='End'){e.preventDefault();goTo(e.key==='Home'?0:count-1);}};
+ document.addEventListener('keydown',bookKey);
+ let touch=null;const bookTouchStart=e=>{touch=e.touches.length===1?{x:e.touches[0].clientX,y:e.touches[0].clientY}:null;};const bookTouchEnd=e=>{if(!touch||!ready||e.touches.length)return;const end=e.changedTouches[0],dx=end.clientX-touch.x,dy=end.clientY-touch.y;touch=null;if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.3&&getSelection()?.isCollapsed!==false)goTo(bookPage+(dx<0?1:-1));};const bookTouchCancel=()=>{touch=null;};sheet.addEventListener('touchstart',bookTouchStart,{passive:true});sheet.addEventListener('touchend',bookTouchEnd,{passive:true});sheet.addEventListener('touchcancel',bookTouchCancel);
+ const wheel=e=>{if(e.ctrlKey||e.metaKey||!ready)return;e.preventDefault();const now=performance.now();if(now-lastWheel<350||Math.max(Math.abs(e.deltaY),Math.abs(e.deltaX))<12)return;lastWheel=now;goTo(bookPage+((Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY)>0?1:-1));};sheet.addEventListener('wheel',wheel,{passive:false});
+ const oldDispose=session.dispose;session.dispose=()=>{oldDispose?.();cancelAnimationFrame(layoutFrame);cancelAnimationFrame(anchorFrame);sheet.removeEventListener('touchstart',bookTouchStart);sheet.removeEventListener('touchend',bookTouchEnd);sheet.removeEventListener('touchcancel',bookTouchCancel);sheet.removeEventListener('wheel',wheel);document.removeEventListener('keydown',bookKey);};session.bookResize=new ResizeObserver(scheduleLayout);session.bookResize.observe(sheet);controls();
  if(readingPreference==='text'||!readingPreference&&matchMedia('(max-width:700px)').matches)session.setTextMode(true);
 }
+
 async function showPdf(d){
  releasePdf();const viewer=$('pdfview');viewer.scrollTop=0;viewer.scrollLeft=0;
  const session=pdfSession={tasks:new Set(),visible:new Set(),running:false,zoom:1,pinching:false};
