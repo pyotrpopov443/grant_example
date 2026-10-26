@@ -120,6 +120,12 @@ body.reading .site-footer{padding-top:12px;padding-bottom:12px}
 #textview .text-page:first-child h2:first-child{margin-top:0}
 #textview .text-placeholder{color:var(--muted);font-size:.85em}
 @media(max-width:600px){#textview{line-height:1.7;padding:20px 16px}.reading-tools{margin-bottom:4px}}
+
+/* Compact reader spacing and an intrinsic-width mobile home button. */
+.content-navigation,body.reading .content-navigation{height:40px;min-height:40px}
+body.reading .content-navigation{margin-bottom:0}
+.reading-tools{min-height:40px}
+@media(max-width:700px){.top .brand{flex:0 1 auto;width:auto}}
 </style>
 </head>
 <body>
